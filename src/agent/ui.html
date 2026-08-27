@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wafer Defect Agent</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #14161a; --muted: #5d6470;
+    --line: #dfe3e8; --accent: #2f6feb; --accent-ink: #ffffff;
+    --err: #b42318; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1c1f25; --ink: #e8eaed; --muted: #9aa3af;
+      --line: #2c313a; --accent: #4b86f0; --accent-ink: #0b0d10;
+      --err: #f87171; --code: #23272e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px; margin-bottom: 16px;
+  }
+  label { display: block; font-weight: 600; margin-bottom: 8px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  input[type=text] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 14px;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  button {
+    padding: 10px 18px; border-radius: 8px; border: 1px solid var(--accent);
+    background: var(--accent); color: var(--accent-ink);
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chips button {
+    padding: 4px 10px; font-size: 12px; font-weight: 500;
+    background: transparent; color: var(--muted); border-color: var(--line);
+  }
+  .chips button:hover { color: var(--ink); border-color: var(--accent); }
+  .pred { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .pred .cls { font-size: 24px; font-weight: 700; }
+  .pred .conf { color: var(--muted); font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13.5px; }
+  td { padding: 4px 0; }
+  td.n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums;
+         padding-right: 12px; width: 64px; }
+  .bar { height: 6px; background: var(--code); border-radius: 3px; overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--accent); }
+  .chat { display: flex; flex-direction: column; gap: 12px; }
+  .msg { padding: 12px 14px; border-radius: 10px; }
+  .msg.user { background: var(--accent); color: var(--accent-ink); align-self: flex-end; max-width: 85%; }
+  .msg.bot  { background: var(--code); align-self: flex-start; max-width: 95%; }
+  .msg table { font-size: 13px; }
+  .msg td { border-bottom: 1px solid var(--line); padding: 4px 8px 4px 0; }
+  .err { color: var(--err); }
+  .muted { color: var(--muted); }
+  .hidden { display: none; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .spin::after {
+    content: ""; display: inline-block; width: 12px; height: 12px; margin-left: 8px;
+    border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%;
+    animation: spin .7s linear infinite; vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Wafer Defect Agent</h1>
+  <div class="sub">WM-811K agent</div>
+
+  <div class="card">
+    <label for="path">Please give the link to your wafer pic</label>
+    <input type="text" id="path" placeholder="data/samples/…npy" autocomplete="off">
+    <div class="hint">
+      A <code>.npy</code> path, or
+      <label for="file" style="display:inline;font-weight:600;color:var(--accent);cursor:pointer">upload one</label>.
+      <input type="file" id="file" class="hidden" accept=".npy">
+      <span id="filename" class="muted"></span>
+    </div>
+
+    <div class="chips" id="samples"></div>
+
+    <div class="row">
+      <button id="btn-classify">Classify</button>
+      <button id="btn-analyze">Analyze</button>
+      <span id="status" class="muted"></span>
+    </div>
+    <div class="hint">
+      <b>Classify</b> runs the CNN only.
+      <b>Analyze</b> adds a plain-language explanation and opens a chat.
+    </div>
+  </div>
+
+  <div class="card hidden" id="card-result">
+    <div class="pred">
+      <span class="cls" id="pred-class">—</span>
+      <span class="conf" id="pred-conf"></span>
+    </div>
+    <table id="pred-table"></table>
+    <div class="row">
+      <button class="ghost hidden" id="btn-explain">Explain &amp; open chat</button>
+    </div>
+  </div>
+
+  <!-- step 3: the conversation -->
+  <div class="card hidden" id="card-chat">
+    <div class="chat" id="chat"></div>
+    <div class="row">
+      <input type="text" id="question" placeholder="Ask anything about this wafer…" autocomplete="off">
+    </div>
+    <div class="row">
+      <button id="btn-send">Send</button>
+      <button class="ghost" id="btn-reset">New wafer</button>
+      <span id="chat-status" class="muted"></span>
+    </div>
+    <div class="chips" id="suggestions"></div>
+  </div>
+
+</div>
+
+<script>
+const SUGGESTIONS = [
+  "How does this compare to an Edge-Ring defect?",
+  "How confident should I be?",
+  "Which other defect could this be confused with?"
+];
+
+let sessionId = null;
+let upload = null;                
+const $ = id => document.getElementById(id);
+const BUTTONS = ["btn-classify", "btn-analyze", "btn-send", "btn-explain"];
+
+fetch("/samples").then(r => r.json()).then(list => {
+  if (!list.length) return;
+  const seen = new Set();
+  list.forEach(s => {
+    if (seen.has(s.label)) return;     
+    seen.add(s.label);
+    const b = document.createElement("button");
+    b.textContent = s.label;
+    b.title = s.path;
+    b.onclick = () => { $("path").value = s.path; clearUpload(); };
+    $("samples").appendChild(b);
+  });
+  $("path").value = list[0].path;
+}).catch(() => {});
+
+
+function clearUpload() { $("file").value = ""; $("filename").textContent = ""; upload = null; }
+
+$("file").onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { upload = r.result.split(",")[1]; $("filename").textContent = `— ${f.name}`; };
+  r.readAsDataURL(f);
+};
+$("path").oninput = clearUpload;
+
+const currentWafer = () => upload || $("path").value.trim();
+
+function md(text) {
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let out = [], inTable = false;
+  for (const line of esc(text).split("\n")) {
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (/^[\s|:-]+$/.test(line)) continue;
+      if (!inTable) { out.push("<table>"); inTable = true; }
+      const cells = line.trim().replace(/^\||\|$/g, "").split("|");
+      out.push("<tr>" + cells.map(c => "<td>" + c.trim() + "</td>").join("") + "</tr>");
+      continue;
+    }
+    if (inTable) { out.push("</table>"); inTable = false; }
+    out.push(line.replace(/^#{1,4}\s*/, "").replace(/^\s*[-*]\s+/, "• "));
+  }
+  if (inTable) out.push("</table>");
+  return out.join("<br>")
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/`(.+?)`/g, "<code>$1</code>")
+    .replace(/(<br>)?(<table>)/g, "$2")
+    .replace(/(<\/table>)(<br>)?/g, "$1");
+}
+
+function bubble(role, html) {
+  const d = document.createElement("div");
+  d.className = "msg " + role;
+  d.innerHTML = html;
+  $("chat").appendChild(d);
+  d.scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
+function showPrediction(p) {
+  $("card-result").classList.remove("hidden");
+  $("pred-class").textContent = p.predicted_class;
+  $("pred-table").innerHTML = p.top_k.map(t => `
+    <tr><td>${t.class}</td>
+        <td class="n">${(t.probability * 100).toFixed(1)}%</td>
+        <td><div class="bar"><span style="width:${t.probability * 100}%"></span></div></td>
+    </tr>`).join("");
+}
+
+async function call(path, body) {
+  const r = await fetch(path, {
+    method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify(body)
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail));
+  return d;
+}
+
+function busy(el, msg) {
+  el.className = msg ? "muted spin" : "muted";
+  el.textContent = msg || "";
+  BUTTONS.forEach(id => $(id).disabled = Boolean(msg));
+}
+
+function fail(el, e) {
+  BUTTONS.forEach(id => $(id).disabled = false);
+  el.className = "err";
+  el.textContent = e.message;
+}
+
+
+$("btn-classify").onclick = async () => {
+  busy($("status"), "classifying");
+  try {
+    showPrediction(await call("/classify", {wafer_map: currentWafer()}));
+    $("btn-explain").classList.remove("hidden");
+    $("card-chat").classList.add("hidden");
+    sessionId = null;
+    busy($("status"), "");
+  } catch (e) { fail($("status"), e); }
+};
+
+async function analyze() {
+  busy($("status"), "asking the agent");
+  try {
+    const d = await call("/analyze", {wafer_map: currentWafer()});
+    sessionId = d.session_id;
+    showPrediction(d.prediction);
+    $("btn-explain").classList.add("hidden");
+    $("card-chat").classList.remove("hidden");
+    $("chat").innerHTML = "";
+    bubble("bot", md(d.explanation));
+    busy($("status"), "");
+    $("question").focus();
+  } catch (e) { fail($("status"), e); }
+}
+$("btn-analyze").onclick = analyze;
+$("btn-explain").onclick = analyze;
+
+async function send() {
+  const q = $("question").value.trim();
+  if (!q || !sessionId) return;
+  bubble("user", q.replace(/&/g, "&amp;").replace(/</g, "&lt;"));
+  $("question").value = "";
+  busy($("chat-status"), "thinking");
+  try {
+    const d = await call("/chat", {session_id: sessionId, question: q});
+    bubble("bot", md(d.answer));
+    busy($("chat-status"), "");
+  } catch (e) { bubble("bot", "⚠️ " + e.message); busy($("chat-status"), ""); }
+}
+$("btn-send").onclick = send;
+$("question").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+
+SUGGESTIONS.forEach(s => {
+  const b = document.createElement("button");
+  b.textContent = s;
+  b.onclick = () => { $("question").value = s; send(); };
+  $("suggestions").appendChild(b);
+});
+
+$("btn-reset").onclick = () => {
+  sessionId = null;
+  $("chat").innerHTML = "";
+  $("card-chat").classList.add("hidden");
+  $("card-result").classList.add("hidden");
+  clearUpload();
+  $("path").focus();
+};
+</script>
+</body>
+</html>
